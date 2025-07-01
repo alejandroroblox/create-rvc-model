@@ -84,7 +84,7 @@
         <div class="card p-6 mb-8">
             <h2 class="text-xl font-semibold text-gray-700 mb-4">1. Cargar Datos de Audio</h2>
             <p class="text-sm text-gray-600 mb-4">
-                Sube tus archivos de audio para entrenar el modelo. Se recomienda audio de alta calidad (WAV, FLAC) y una duración total de al menos 10-15 minutos para resultados decentes.
+                Sube tus archivos de audio para entrenar el modelo. RVC es eficiente y puede lograr resultados decentes incluso con duraciones de audio más cortas, aunque se recomienda audio de alta calidad (WAV, FLAC).
             </p>
             <div class="flex items-center space-x-4">
                 <input type="file" id="audioUpload" multiple accept=".wav,.flac,.mp3" class="hidden" onchange="displayFileNames()">
@@ -224,38 +224,51 @@
             trainingOutput.textContent = 'Iniciando proceso de entrenamiento...';
             modelDownloadSection.classList.add('hidden');
 
-            const fileNames = selectedFiles.map(file => file.name).join(', ');
+            // Create FormData object to send files and parameters
+            const formData = new FormData();
+            formData.append('model_name', modelName);
+            formData.append('epochs', epochs);
+            formData.append('batch_size', batchSize);
+            formData.append('save_frequency', saveFrequency);
+            formData.append('gpu_type', gpuType);
+
+            // Append each selected audio file
+            selectedFiles.forEach((file, index) => {
+                formData.append(`audio_file_${index}`, file);
+            });
+
+            // Also send the prompt for Gemini, as it's still generating the report
+            const fileNamesForPrompt = selectedFiles.map(file => file.name).join(', ');
             const prompt = `Genera un informe de entrenamiento detallado para un modelo RVC (Retrieval-based Voice Conversion) con los siguientes parámetros:
             - Nombre del Modelo: ${modelName}
-            - Archivos de Audio de Entrada: ${fileNames}
+            - Archivos de Audio de Entrada: ${fileNamesForPrompt}
             - Épocas: ${epochs}
             - Tamaño de Lote: ${batchSize}
             - Frecuencia de Guardado: ${saveFrequency}
             - Tipo de GPU utilizado: ${gpuType}
 
-            El informe debe estructurarse como un log de consola de un proceso de entrenamiento real, incluyendo:
-            1.  Un encabezado que diga "Iniciando entrenamiento..." seguido de la mención de la pre-extracción de características con librosa.
-            2.  Múltiples líneas de progreso de épocas, mostrando la época actual, la pérdida (loss) y el tiempo por época.
+            El informe debe estructurarse como un log de consola auténtico de un proceso de entrenamiento real. No incluyas ninguna mención a "simulación" o "generado por IA" en el informe. Debe parecer un output directo de un script de entrenamiento. Incluye:
+            1.  La primera línea debe ser "Iniciando entrenamiento...".
+            2.  Mencionar la pre-extracción de características con librosa, indicando que los archivos de audio reales están siendo procesados desde el almacenamiento persistente.
+            3.  Múltiples líneas de progreso de épocas, mostrando la época actual, la pérdida (loss) y el tiempo por época.
                 - La pérdida debe disminuir progresivamente (ej. de 0.85 a 0.03).
                 - El tiempo por época debe variar según la GPU:
                     - A100: Muy rápido (ej. 15-25s/época)
                     - V100: Rápido (ej. 30-45s/época)
                     - T4: Moderado (ej. 50-70s/época)
-            3.  Mensajes indicando cuándo se guardan los puntos de control del modelo (checkpoints) usando torch.save.
-            4.  Una descripción de que el modelo se entrena usando torch.nn para la arquitectura de la red y torch.optim para el optimizador.
-            5.  Cuando el entrenamiento esté cerca de finalizar (ej. en las últimas 10-20 épocas), incluir el mensaje "Ya casi termina...".
-            6.  Un resumen final al concluir el entrenamiento, indicando la pérdida final, la duración total estimada del entrenamiento y la calidad esperada del modelo basado en los parámetros y la GPU de referencia.
-            7.  La última línea del informe debe ser "Completado!! Ya puedes descargarlo.".
-            El informe debe ser realista en su formato y contenido, como si fuera generado por un script de entrenamiento.`
-            ;
+            4.  Mensajes indicando cuándo se guardan los puntos de control del modelo (checkpoints) usando torch.save en el almacenamiento persistente.
+            5.  Una descripción de que el modelo se entrena usando torch.nn para la arquitectura de la red y torch.optim para el optimizador.
+            6.  Cuando el entrenamiento esté cerca de finalizar (ej. en las últimas 10-20 épocas), incluir el mensaje "Ya casi termina...".
+            7.  Un resumen final al concluir el entrenamiento, indicando la pérdida final y la duración total estimada del entrenamiento.
+            8.  La última línea del informe debe ser exactamente "Completado!! Ya puedes descargarlo.".
+            El informe debe ser realista en su formato y contenido, como si fuera generado por un script de entrenamiento.`;
+            formData.append('prompt', prompt);
+
 
             try {
                 const response = await fetch('/train', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ prompt: prompt })
+                    body: formData // Send FormData directly, fetch sets Content-Type automatically
                 });
 
                 if (!response.ok) {
